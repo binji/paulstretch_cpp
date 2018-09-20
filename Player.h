@@ -19,9 +19,13 @@
 #define PLAYER_H
 
 #include <string>
+#if __EMSCRIPTEN__
+#include "Input/InputS.h"
+#else
 #include "Input/AInputS.h"
 #include "Input/VorbisInputS.h"
 #include "Input/MP3InputS.h"
+#endif
 #include "ProcessedStretch.h"
 #include "Thread.h"
 #include "BinauralBeats.h"
@@ -60,6 +64,12 @@ class Player:public Thread{
 	    int samplerate;
 	    bool eof;
 	}info;
+
+  // NOTE(binji): Added these getters
+  float get_position() const { return info.position; }
+  int get_playing() const { return info.playing; }
+  int get_samplerate() const { return info.samplerate; }
+  bool get_eof() const { return info.eof; }
 
 	bool is_freeze(){
 	    return freeze_mode;
@@ -118,8 +128,12 @@ class Player:public Thread{
 	}outbuf;
 	bool first_in_buf;
 	
+  // NOTE(binji): Made public so we don't have to use the Player::run infinite loop.
+  public:
 	void newtaskcheck();
 	void computesamples();
+  private:
+
 	bool freeze_mode,bypass_mode,paused;
 	REALTYPE volume,onset_detection_sensitivity;
 

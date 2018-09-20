@@ -1,0 +1,607 @@
+1. Download from https://github.com/paulnasca/paulstretch_cpp
+2. First try to build native version
+  1. Need quite a few libraries: libaudiofile-dev, libvorbis-dev, libfltk-dev,
+     portaudio19-dev, libmad0-dev, libmxml-dev
+  2. Run compile script: ./compile_linux_kissfft.sh
+  3. Works!
+3. For a first step, we don't need all the UI and audio libraries.
+4. Looks like the main algorithm is ProcessedStretch.cpp, used by Player.cpp.
+5. Try to compile:
+  ```
+  $ ~/dev/wasm-install/bin/em++ -s WASM=1 ../ProcessedStretch.cpp
+  In file included from ../ProcessedStretch.cpp:22:
+  In file included from ../ProcessedStretch.h:23:
+  In file included from ../FreeEdit.h:26:
+  ../XMLwrapper.h:21:10: fatal error: 'mxml.h' file not found
+  ```
+
+  We need libmxml at least.
+6. Download libmxml from https://github.com/michaelrsweet/mxml
+7. Docs say to use configure, so we use emconfigure instead:
+  ```
+  $ ~/dev/wasm-install/bin/emconfigure ./configure
+  checking build system type... x86_64-unknown-linux-gnu
+  checking host system type... x86_64-unknown-linux-gnu
+  checking for gcc... /usr/local/google/home/binji/dev/wasm-install/emscripten/emcc
+  checking whether the C compiler works... yes
+  checking for C compiler default output file name... a.out
+  checking for suffix of executables...
+  checking whether we are cross compiling... no
+  checking for suffix of object files... o
+  checking whether we are using the GNU C compiler... yes
+  checking whether /usr/local/google/home/binji/dev/wasm-install/emscripten/emcc accepts -g... yes
+  checking for /usr/local/google/home/binji/dev/wasm-install/emscripten/emcc option to accept ISO C89... none needed
+  checking whether we are using the GNU C++ compiler... yes
+  checking whether /usr/local/google/home/binji/dev/wasm-install/emscripten/em++ accepts -g... yes
+  checking for a BSD-compatible install... /usr/bin/install -c
+  checking for ranlib... /usr/local/google/home/binji/dev/wasm-install/emscripten/emranlib
+  checking for ar... /usr/local/google/home/binji/dev/wasm-install/emscripten/emar
+  checking for cp... /bin/cp
+  checking for ln... /bin/ln
+  checking for mkdir... /bin/mkdir
+  checking for rm... /bin/rm
+  checking for inline... inline
+  checking for strdup... yes
+  checking for strlcat... yes
+  checking for strlcpy... yes
+  checking for snprintf... yes
+  checking for vasprintf... yes
+  checking for vsnprintf... yes
+  checking for long long int... yes
+  checking for library containing gzgets... no
+  checking how to run the C preprocessor... /usr/local/google/home/binji/dev/wasm-install/emscripten/emcc -E
+  checking for grep that handles long lines and -e... /bin/grep
+  checking for egrep... /bin/grep -E
+  checking for ANSI C header files... yes
+  checking for sys/types.h... yes
+  checking for sys/stat.h... yes
+  checking for stdlib.h... yes
+  checking for string.h... yes
+  checking for memory.h... yes
+  checking for strings.h... yes
+  checking for inttypes.h... yes
+  checking for stdint.h... yes
+  checking for unistd.h... yes
+  checking pthread.h usability... yes
+  checking pthread.h presence... yes
+  checking for pthread.h... yes
+  checking for pthread_create using -lpthreads... yes
+  checking for shared library support... yes
+  configure: creating ./config.status
+  config.status: creating Makefile
+  config.status: creating mxml.pc
+  config.status: creating config.h
+  ```
+8. Now make:
+  ```
+  $ make
+  Compiling mxml-attr.c
+  Compiling mxml-entity.c
+  Compiling mxml-file.c
+  Compiling mxml-get.c
+  Compiling mxml-index.c
+  Compiling mxml-node.c
+  Compiling mxml-search.c
+  Compiling mxml-set.c
+  Compiling mxml-private.c
+  Compiling mxml-string.c
+  Creating libmxml.so.1.6...
+  WARNING:root:emcc: cannot find library "pthreads"
+  Compiling mxmldoc.c
+  mxmldoc.c:1324:1: warning: unused function 'get_iso_date' [-Wunused-function]
+  get_iso_date(time_t t)                  /* I - Time value */
+  ^
+  mxmldoc.c:1094:1: warning: unused function 'epub_ws_cb' [-Wunused-function]
+  epub_ws_cb(mxml_node_t *node,           /* I - Element node */
+  ^
+  2 warnings generated.
+  Compiling mmd.c
+  Linking mxmldoc...
+  WARNING:root:emcc: cannot find library "pthreads"
+  WARNING:root:ignoring dynamic library libmxml.so because not compiling to JS or HTML, remember to link it when compiling to JS or HTML at the end
+  Creating libmxml.a...
+  Compiling testmxml.c
+  Linking testmxml...
+  WARNING:root:emcc: cannot find library "pthreads"
+  Testing library...
+  /bin/sh: ./testmxml: Permission denied
+  Makefile:328: recipe for target 'testmxml' failed
+  make: *** [testmxml] Error 126
+  ```
+
+  Some errors, but only when trying to run the test. And it generated the library file for us, `libmxml.a`
+9. Let's try to compile paulstretch again:
+  ```
+  $ ~/dev/wasm-install/bin/em++ -s WASM=1 -I/usr/local/google/home/binji/dev/github/mxml ./ProcessedStretch.cpp -o paulstretch.js -L/usr/local/google/home/binji/dev/github/mxml -lmxml
+  In file included from ../ProcessedStretch.cpp:22:
+  In file included from ../ProcessedStretch.h:24:
+  ../Stretch.h:25:10: fatal error: 'fftw3.h' file not found
+  #include <fftw3.h>
+  ```
+10. The docs say we can use FFTW or KISSFFT which is included in this repo.
+  Let's use KISSFFT for now. The compile script for KISSFFT says we just need
+  to add -DKISSFFT and -I./contrib:
+  ```
+  $ ~/dev/wasm-install/bin/em++ -s WASM=1 -DKISSFFT -I../contrib -I/usr/local/google/home/binji/dev/github/mxml ../ProcessedStretch.cpp -o paulstretch.js -L/usr/local/google/home/binji/dev/github/mxml -lmxml
+  ```
+
+  Works! Let's include some more cpp files that we know we'll need.
+  ProcessStretch includes Stretch.h, XMLWrapper.h, and FreeEdit.h. Let's try
+  compiling those cpp files too.
+  ```
+  $ ~/dev/wasm-install/bin/em++ -s WASM=1 -DKISSFFT -I../contrib -I/usr/local/google/home/binji/dev/github/mxml ../ProcessedStretch.cpp ../Stretch.cpp ../FreeEdit.cpp ../globals.cpp -o paulstretch.js -L/usr/local/google/home/binji/dev/github/mxml -lmxml
+  ```
+
+  Still works, but none of the functions we care about are being exported yet. We can check that with wasm-objdump:
+  ```
+  $ wasm-objdump -j EXPORT paulstretch.wasm -x
+
+  paulstretch.wasm:	file format wasm 0x1
+
+  Section Details:
+
+  Export[23]:
+   - func[59] <___cxa_can_catch> -> "___cxa_can_catch"
+   - func[60] <___cxa_is_pointer_type> -> "___cxa_is_pointer_type"
+   - func[30] <___errno_location> -> "___errno_location"
+   - func[38] <_fflush> -> "_fflush"
+   - func[26] <_free> -> "_free"
+   - func[25] <_malloc> -> "_malloc"
+   - func[62] <_memcpy> -> "_memcpy"
+   - func[63] <_memset> -> "_memset"
+   - func[64] <_sbrk> -> "_sbrk"
+   - func[65] <dynCall_ii> -> "dynCall_ii"
+   - func[66] <dynCall_iiii> -> "dynCall_iiii"
+   - func[67] <dynCall_vi> -> "dynCall_vi"
+   - func[68] <dynCall_viiii> -> "dynCall_viiii"
+   - func[69] <dynCall_viiiii> -> "dynCall_viiiii"
+   - func[70] <dynCall_viiiiii> -> "dynCall_viiiiii"
+   - func[21] <establishStackSpace> -> "establishStackSpace"
+   - func[24] <getTempRet0> -> "getTempRet0"
+   - func[61] <runPostSets> -> "runPostSets"
+   - func[23] <setTempRet0> -> "setTempRet0"
+   - func[22] <setThrew> -> "setThrew"
+   - func[18] <stackAlloc> -> "stackAlloc"
+   - func[20] <stackRestore> -> "stackRestore"
+   - func[19] <stackSave> -> "stackSave"
+  ```
+
+  These are all standard exported functions provided by emscripten.
+11. Let's create an API entrypoint. We can use embind, see a nice writeup here:
+  https://developers.google.com/web/updates/2018/08/embind
+
+  Let's just expose the constructor for now. We'll add this to api.cpp
+
+  ```
+  #include <emscripten/bind.h>
+
+  #include "ProcessedStretch.h"
+
+  using namespace emscripten;
+
+  EMSCRIPTEN_BINDINGS(my_module) {
+    class_<ProcessedStretch>("ProcessedStretch")
+        .constructor<REALTYPE, int, FFTWindow, bool, REALTYPE, int>();
+  }
+  ```
+
+  Compiling now gives an unresolved symbol:
+
+  ```
+  $ ~/dev/wasm-install/bin/em++ --bind -s WASM=1 -DKISSFFT -I../contrib -I/usr/local/google/home/binji/dev/github/mxml ../ProcessedStretch.cpp ../Stretch.cpp ../FreeEdit.cpp ../globals.cpp ../api.cpp -o paulstretch.js -L/usr/local/google/home/binji/dev/github/mxml -lmxml
+  warning: unresolved symbol: kiss_fftr_alloc
+  ```
+
+  Let's compile in the kissfft sources too. Since they're C files, use `-x c` to compile them as C.
+
+  ```
+  $ ~/dev/wasm-install/bin/em++ --bind -s WASM=1 -DKISSFFT -I../contrib -I/usr/local/google/home/binji/dev/github/mxml ../ProcessedStretch.cpp ../Stretch.cpp ../FreeEdit.cpp ../globals.cpp ../api.cpp -x c ../contrib/kiss_fft.c ../contrib/kiss_fftr.c -x c++ -o paulstretch.js -L/usr/local/google/home/binji/dev/github/mxml -lmxml
+  ```
+
+11. OK, maybe simpler to just wrap Player.cpp instead of ProcessedStretch.cpp
+
+  Player.cpp accepts 3 different file types: MP3, Vorbis, and Audiofile. We can
+  port those libraries, but for now let's implement a dummy `InputS` that we
+  can use instead.
+
+  First we comment out those headers and include the base class:
+
+  ```
+  #if 0
+  #include "Input/AInputS.h"
+  #include "Input/VorbisInputS.h"
+  #include "Input/MP3InputS.h"
+  #else
+  #include "Input/InputS.h"
+  #endif
+  ```
+
+  In Player.cpp we comment out the place where these are used, and provide our
+  MemoryInputS instead:
+
+  ```
+  #if 0
+  		switch (task.intype){
+  			case FILE_VORBIS:ai=new VorbisInputS;
+  							 break;
+  			case FILE_MP3:ai=new MP3InputS;
+  						  break;
+  			default: ai=new AInputS;
+  		};
+  #else
+      ai = new MemoryInputS();
+  #endif
+  ```
+
+  Here's our dummy implementation.
+
+  ```
+  class MemoryInputS : public InputS {
+   public:
+    MemoryInputS() {}
+
+    virtual bool open(std::string filename) { return true; }
+    virtual void close() {}
+    virtual int read(int nsmps, short int* smps) { return 0; }
+    virtual void seek(double pos) {}
+  };
+  ```
+
+  Let's just expose the constructor for now. We'll add this to api.cpp
+
+  ```
+  #include <emscripten/bind.h>
+
+  #include "Player.h"
+
+  using namespace emscripten;
+
+  EMSCRIPTEN_BINDINGS(my_module) {
+    class_<Player>("Player")
+        .constructor<>();
+  }
+  ```
+
+  Moving compilation into compile.sh:
+
+  #!/bin/bash
+  ~/dev/wasm-install/bin/em++ --bind -s WASM=1 -DKISSFFT -I./contrib -I/usr/local/google/home/binji/dev/github/mxml ProcessedStretch.cpp Stretch.cpp FreeEdit.cpp globals.cpp Player.cpp Thread.cpp Mutex.cpp BinauralBeats.cpp api.cpp -x c contrib/kiss_fft.c contrib/kiss_fftr.c -x c++ -o emscripten/paulstretch.js -L/usr/local/google/home/binji/dev/github/mxml -lmxml
+
+  Works!
+
+12. Let's write some JavaScript so we can test this out.
+
+  Emscripten creates `Module` for us, and calls `onRuntimeInitialized` when the
+  wasm module is loaded.
+
+  ```
+  <!DOCTYPE html>
+  <script src="paulstretch.js"></script>
+  <script>
+    Module.onRuntimeInitialized = () => {
+      console.log("Loaded!");
+      let player = new Module.Player();
+      console.log("player", player);
+    };
+  </script>
+  ```
+
+  Running this prints the following to the log:
+
+  ```
+  Loaded!
+  test.html:9 player Player {$$: {…}}
+  ```
+
+13. Expanding the api gives us:
+
+  ```
+  EMSCRIPTEN_BINDINGS(my_module) {
+    enum_<FILE_TYPE>("FILE_TYPE")
+        .value("FILE_WAV", FILE_WAV)
+        .value("FILE_VORBIS", FILE_VORBIS)
+        .value("FILE_MP3", FILE_MP3);
+
+    enum_<FFTWindow>("FFTWindow")
+        .value("W_RECTANGULAR", W_RECTANGULAR)
+        .value("W_HAMMING", W_HAMMING)
+        .value("W_HANN", W_HANN)
+        .value("W_BLACKMAN", W_BLACKMAN)
+        .value("W_BLACKMAN_HARRIS", W_BLACKMAN_HARRIS);
+
+    enum_<Player::ModeType>("ModeType")
+        .value("MODE_PLAY", Player::MODE_PLAY)
+        .value("MODE_STOP", Player::MODE_STOP)
+        .value("MODE_PREPARING", Player::MODE_PREPARING)
+        .value("MODE_PAUSE", Player::MODE_PAUSE);
+
+    class_<ProcessParameters>("ProcessParameters").constructor<>();
+    class_<BinauralBeatsParameters>("BinauralBeatsParameters").constructor<>();
+    class_<Player>("Player")
+        .constructor<>()
+        .function("startplay", &Player::startplay, allow_raw_pointers())
+        .function("stop", &Player::stop)
+        .function("pause", &Player::pause)
+        .function("freeze", &Player::freeze)
+        .function("setrap", &Player::setrap)
+        .function("seek", &Player::seek)
+        .function("getaudiobuffer", &Player::getaudiobuffer, allow_raw_pointers())
+        .function("getmode", &Player::getmode)
+        .function("is_freeze", &Player::is_freeze)
+        .function("set_window_type", &Player::set_window_type)
+        .function("set_volume", &Player::set_volume)
+        .function("set_onset_detection_sensitivity",
+                  &Player::set_onset_detection_sensitivity)
+        .function("set_process_parameters", &Player::set_process_parameters,
+                  allow_raw_pointers());
+    }
+    ```
+
+14. Embind doesn't work very well with raw pointers, so let's wrap the
+   getaudiobuffer function:
+
+  ```
+  std::vector<float> buffer;
+  ...
+  .function("getaudiobuffer",
+            optional_override([](Player& self, int nsamples) -> val {
+              if (buffer.size() < nsamples) {
+                buffer.resize(nsamples);
+              }
+              self.getaudiobuffer(nsamples, buffer.data());
+              return val(typed_memory_view(nsamples, buffer.data()));
+            }))
+  ```
+
+  Then we can test with some JavaScript with dummy values. Since we're not
+  actually running a thread, we'll need to call `newtaskcheck` and
+  `computesamples` manually.
+
+  ```
+  let pparams = new Module.ProcessParameters();
+  let bbparams = new Module.BinauralBeatsParameters();
+  let player = new Module.Player();
+
+  player.startplay("foo", 0, 1.0, 1000, Module.FILE_TYPE.FILE_WAV, false,
+                   pparams, bbparams);
+  player.newtaskcheck();
+  player.computesamples();
+  let buffer_view = player.getaudiobuffer(frames);
+  console.log([].slice.call(buffer_view));
+  ```
+
+  Which produces:
+
+  ```
+  (4096) [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …]
+  ```
+
+15. Instead of using a memory input, let's wire it up so it calls out to JS:
+
+  ```
+  class JsInputS : public emscripten::wrapper<InputS> {
+   public:
+    EMSCRIPTEN_WRAPPER(JsInputS);
+
+    static JsInputS* make() {
+      return emscripten::val::global()
+          .call<emscripten::val>("makeJsInputS")
+          .as<JsInputS*>(emscripten::allow_raw_pointers());
+    }
+
+    bool open(std::string filename) override {
+      return call<bool>("open", filename);
+    }
+
+    void close() override { return call<void>("close"); }
+
+    int read(int nsmps, short int* smps) override {
+      return call<int>("read", emscripten::typed_memory_view(nsmps, smps));
+    }
+
+    void seek(double pos) override { return call<void>("seek", pos); }
+  };
+  ```
+
+  This creates a constructor function too, so we can create the `JsInputS`
+  value from the player:
+
+  ```
+  ai = JsInputS::make();
+  ```
+
+  We can then implement hook this up in our API. The `read` function is a bit
+  tricky; we want to pass a buffer that the JavaScript class should fill in, so
+  we use `val` which can represent any JavaScript value, and pass a
+  `typed_memory_view` when we call it.
+
+  ```
+  class_<InputS>("InputS")
+      .function("open", &InputS::open, pure_virtual())
+      .function("close", &InputS::close, pure_virtual())
+      .function("read",
+                optional_override([](InputS& self, const val& x) -> int {
+                  __builtin_unreachable();
+                }),
+                pure_virtual())
+      .function("skip", &InputS::skip)
+      .function("seek", &InputS::seek, pure_virtual())
+      .allow_subclass<JsInputS>("JsInputS");
+  ```
+
+  And finally create our dummy JS wrapper:
+
+  ```
+  function makeJsInputS() {
+    return Module.InputS.implement({
+      open: function(filename) { return true; },
+      close: function() {},
+      read: function(data) { return 0; },
+      seek: function(pos) {}
+    });
+  }
+  ```
+
+  Let's do a simple test to see if the day is coming through. Let's fill the
+  buffer with 1 instead of 0:
+
+  ```
+    read: function(data) {
+      [].fill.call(data, 1);
+      return data.length;
+    }
+  ```
+
+  The getaudiobuffer function fills the output buffer with zeroes until the
+  mode is set to MODE_PLAY, so let's wait until then to get some output:
+
+  ```
+  player.startplay("foo", 0, 4.0, 16384, Module.FILE_TYPE.FILE_WAV, false,
+                   pparams, bbparams);
+  player.newtaskcheck();
+  while (player.getmode() == Module.ModeType.MODE_PREPARING) {
+    player.computesamples();
+  }
+
+  let buffer_view = player.getaudiobuffer(frames);
+  console.log("buffer_view", [].slice.call(buffer_view));
+  ```
+
+  Running this gives:
+
+  ```
+  buffer_view
+  (4096) [0, 0, 0, 0, 0, 0, 6.430850318407677e-13, -2.152551574485795e-12, 6.551080749921112e-13, -2.1540525439733837e-12, 1.3136956800163802e-12, -4.296929565633656e-12, 1.960046057750131e-12, -6.4000597356506095e-12, 2.6692697531471854e-12, -8.454261596346768e-12, 3.1094152860150492e-12, -1.058215494398329e-11, 3.590530433736361e-12, -1.2809193809804054e-11, 4.910075818154169e-12, -1.70326842907631e-11, 5.617686437559e-12, -1.909553071222092e-11, 6.840214592657157e-12, -2.346487067150793e-11, 7.945741287151975e-12, -2.762594319971612e-11, 9.095522078561569e-12, -3.2179408443466784e-11, 1.0198993559418223e-11, -3.5831591166379795e-11, 1.1526167173481205e-11, -4.2377639591917315e-11, 1.23578395780366e-11, -4.624686744669759e-11, 1.359451353571961e-11, -5.267773717232416e-11, 1.481988663731837e-11, -5.867121372071793e-11, 1.6132893632114786e-11, -6.503878685615305e-11, 1.7390304474229623e-11, -7.142234720314278e-11, 1.8859292599815447e-11, -7.799447893086509e-11, 2.1527923541042604e-11, -8.601011569631112e-11, 2.298783385867864e-11, -9.251961696765676e-11, 2.4376707249973428e-11, -9.899922548406437e-11, 2.760946679614129e-11, -1.0702769920323263e-10, 2.8575156130195012e-11, -1.145896502685595e-10, 3.124997483006098e-11, -1.2360516776777075e-10, 3.316446423040631e-11, -1.337847610471954e-10, 3.739173554118125e-11, -1.415446093666617e-10, 4.111103124593285e-11, -1.4979900653244727e-10, 4.3006275624035695e-11, -1.5930701202648834e-10, 4.8209058273185335e-11, -1.697384593990492e-10, 5.059602042889466e-11, -1.8114931776835874e-10, 5.543515299577528e-11, -1.9203881540530432e-10, 5.673018305119015e-11, -2.0600761374556242e-10, 6.049374196015478e-11, -2.169610324731508e-10, 6.350451414727232e-11, -2.2780338726491323e-10, 6.691694420801753e-11, -2.383115649262635e-10, 7.006945024201627e-11, -2.4870910886320985e-10, 7.326751011449417e-11, -2.613060601230899e-10, 7.736235957400694e-11, -2.7691254844697255e-10, 8.149501906640211e-11, -2.8871363633165004e-10, 8.646982435633888e-11, -3.026099093528245e-10, 8.974053444799068e-11, -3.1444286063830873e-10, 8.942164370084882e-11, -3.3193950366161573e-10, 9.117960553250981e-11, -3.4456182351760845e-10, 9.748751111926524e-11, -3.61213059463239e-10, 1.0450831866570809e-10, -3.77680414720416e-10, …]
+  ```
+
+  Great!
+
+16. Now to test with real data. To do so we need to read audio date from the
+  browser. We can use AudioContext.decodeAudioData for that. First get a File
+  from an `<input>` element, then read the contents:
+
+  ```
+  let sources = new Map();
+
+  document.querySelector('#file').addEventListener('change', async event => {
+    let reader = new FileReader();
+    let readPromise = eventPromise(reader, 'loadend', 'error');
+    let file = event.target.files[0];
+    let filename = file.name;
+    reader.readAsArrayBuffer(file);
+    await readPromise;
+
+    let audioContext = new AudioContext();
+    let audioBuffer = await audioContext.decodeAudioData(reader.result);
+
+    sources.set(filename, audioBuffer);
+  ```
+
+  The AudioBuffer contents are stashed in the `sources` Map, keyed by filename.
+
+  Then we need to actually implement reading this data from the `JsInputS`
+  class. When we call open with that filename, we want to read the data that
+  the `InputS` class needs. Fortunately, the AudioBuffer provides all of that
+  information.
+
+  ```
+  open: function(filename) {
+    this.filename_ = filename;
+    this.source_ = sources.get(filename);
+    if (this.source_ === undefined) { return false; }
+
+    this.channels_ = new Array(this.numberOfChannels);
+    switch (this.source_.numberOfChannels) {
+      case 1:
+        this.channels_[0] = this.source_.getChannelData(0);
+        this.channels_[1] = this.source_.getChannelData(0);
+        break;
+
+      default:
+      case 2:
+        this.channels_[0] = this.source_.getChannelData(0);
+        this.channels_[1] = this.source_.getChannelData(1);
+        break;
+    }
+
+    this.nsamples = this.channels_[0].length;
+    this.nchannels = 2;
+    this.samplerate = this.source_.sampleRate;
+    this.currentsample = 0;
+    return true;
+  }
+  ```
+
+  `nsamples`, `nchannels`, `samplerate`, and `currentsample` are all properties
+  on the `InputS` class that are meant to be set by the derived class. We first
+  create getter/setter functions so they can be exposed:
+
+  ```
+  class InputS{
+    public:
+      ...
+    int get_nsamples() const { return info.nsamples; }
+    int get_nchannels() const { return info.nchannels; }
+    int get_samplerate() const { return info.samplerate; }
+    int get_currentsample() const { return info.currentsample; }
+    void set_nsamples(int x) { info.nsamples = x; }
+    void set_nchannels(int x) { info.nchannels = x; }
+    void set_samplerate(int x) { info.samplerate = x; }
+    void set_currentsample(int x) { info.currentsample = x; }
+
+		struct {
+			int nsamples;
+			int nchannels;
+			int samplerate;
+			int currentsample;
+		} info;
+  }
+  ```
+
+  We can then expose these properties to JavaScript using the `property`
+  function:
+
+  ```
+    class_<InputS>("InputS")
+    ...
+      .property("nsamples", &InputS::get_nsamples, &InputS::set_nsamples)
+      .property("nchannels", &InputS::get_nchannels, &InputS::set_nchannels)
+      .property("samplerate", &InputS::get_samplerate, &InputS::set_samplerate)
+      .property("currentsample", &InputS::get_currentsample,
+                &InputS::set_currentsample)
+      .property("eof", &InputS::eof)
+  ```
+
+17. Now we need to implement the `read` function. WebAudio provides our audio
+  as 32-bit float samples in the range [-1, 1], but paulstretch expects the
+  audio to be 16-bit signed integer samples in the range [-32768, 32767], so we
+  have to convert the data to the correct format before passing it back to C++.
+
+  Another bit of trickiness: the C++ code expects the left and right channels
+  to be interleaved, but the WebAudio data gives us individual channels.
+
+  Finally, the `read` function may request more data than is available, so we
+  fill the rest of the buffer with zero in that case.
+
+  ```
+    read: function(data) {
+      let requested = data.length / 2;
+      let remaining = this.nsamples - this.currentsample;
+      let samples = Math.min(remaining, requested);
+      for (let i = 0; i < samples; ++i) {
+        data[2*i] = this.channels_[0][this.currentsample + i] * 32768;
+        data[2*i+1] = this.channels_[1][this.currentsample + i] * 32768;
+      }
+      if (samples < requested) {
+        for (let i = samples; i < requested; ++i) {
+          data[2*i] = 0;
+          data[2*i+1] = 0;
+        }
+        this.currentsample = this.nsamples;
+        this.eof = true;
+      } else {
+        this.currentsample += samples;
+      }
+      return samples;
+    }
+  ```

@@ -43,6 +43,16 @@ class InputS{
 		};
 		virtual void seek(double pos)=0;//0=start,1.0=end
 
+    // NOTE(binji): extended to provide getter/setter
+    int get_nsamples() const { return info.nsamples; }
+    int get_nchannels() const { return info.nchannels; }
+    int get_samplerate() const { return info.samplerate; }
+    int get_currentsample() const { return info.currentsample; }
+    void set_nsamples(int x) { info.nsamples = x; }
+    void set_nchannels(int x) { info.nchannels = x; }
+    void set_samplerate(int x) { info.samplerate = x; }
+    void set_currentsample(int x) { info.currentsample = x; }
+
 		struct {
 			int nsamples;
 			int nchannels;

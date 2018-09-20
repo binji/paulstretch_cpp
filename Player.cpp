@@ -22,6 +22,10 @@
 #include "Player.h"
 #include "globals.h"
 
+#if __EMSCRIPTEN__
+#include "Input/JsInputS.h"
+#endif
+
 static int player_count=0;
 
 Player::Player():Thread(){
@@ -247,6 +251,9 @@ void Player::newtaskcheck(){
 			current_filename=task.filename;
 			task.startpos=0.0;
 		};
+#if __EMSCRIPTEN__
+    ai = JsInputS::make();
+#else
 		switch (task.intype){
 			case FILE_VORBIS:ai=new VorbisInputS;
 							 break;
@@ -254,6 +261,7 @@ void Player::newtaskcheck(){
 						  break;
 			default: ai=new AInputS;
 		};
+#endif
 		if (ai->open(task.filename)){
 			info.samplerate=ai->info.samplerate;
 			mode=MODE_PREPARING;
@@ -330,7 +338,9 @@ void Player::newtaskcheck(){
 
 			bufmutex.unlock();	    	    
 
-		};
+		} else {
+      printf("open failed...\n");
+    }
 	};
 	if (newmode==TASK_SEEK){
 		if (ai) ai->seek(task.startpos);
