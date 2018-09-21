@@ -249,7 +249,7 @@ void Player::newtaskcheck(){
 	if (newmode==TASK_START){
 		if (current_filename!=task.filename){
 			current_filename=task.filename;
-			task.startpos=0.0;
+			// task.startpos=0.0;
 		};
 #if __EMSCRIPTEN__
     ai = JsInputS::make();

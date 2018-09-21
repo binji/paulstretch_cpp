@@ -1,6 +1,14 @@
 <!DOCTYPE html>
+<style>
+  .flex {
+    display: flex;
+  }
+  #position {
+    width: 100%;
+  }
+</style>
 <div>
-  <label for="file">Audio File</label>
+  <label for="file">File:</label>
   <input id="file" type="file">
 </p>
 <div>
@@ -22,13 +30,15 @@
   </select>
 </div>
 <hr>
+<video hidden></video>
 <div>
-  <button id="play">Play</button>
-  <button id="stop">Stop</button>
+</div>
+<div class="flex">
+  <input id="position" type="range" min="0" max="1" value="0" step="any">
 </div>
 <div>
-  <label for="position">Position:</label>
-  <span id="position">0</span>
+  <button id="playPause">&#9654;</button>
+  <span id="position_text"></span>
 </div>
 <script src="paulstretch.js"></script>
 <script>
@@ -38,7 +48,7 @@
   let bbparams;
   let player;
 
-  let sources = new Map();
+  let audioBuffer;
   let filename;
 
   let JsInputS;
@@ -53,6 +63,8 @@
   });
 
   let $ = x => document.querySelector(x);
+
+  let video = $('video');
 
   function eventPromise(obj, resolveEvent, rejectEvent) {
     return new Promise((resolve, reject) => {
@@ -76,13 +88,13 @@
     return new Promise(resolve => { setTimeout(() => resolve(), ms); });
   }
 
-  // TODO(binji): copied from Control::process in Control.cpp
+  // NOTE(binji): copied from Control::process in Control.cpp
   let process = {
     stretch : 4.0,
     bufsize : 16384,
   };
 
-  // NOTE(binji): copied from Control::optimizebufsize in Control.cpp
+  // NOTE(binji): copied from Control::get_optimized_updown in Control.cpp
   function get_optimized_updown(n, up) {
     let orig_n = n;
     while (true) {
@@ -98,11 +110,40 @@
     return orig_n;
   }
 
+  // NOTE(binji): copied from Control::optimizebufsize in Control.cpp
   function optimizebufsize(n) {
     let n1=get_optimized_updown(n, false);
     let n2=get_optimized_updown(n, true);
     if ((n-n1)<(n2-n)) return n1;
     else return n2;
+  }
+
+  function padZero(s, len) {
+    return String(s).padStart(len, '0');
+  }
+
+  function secToTimecode(total) {
+    let result = '';
+
+    let hours = (total / (60*60)) | 0;
+    result += padZero(hours, 2) + ':';
+    total -= hours * 60*60;
+
+    let mins = (total / 60) | 0;
+    result += padZero(mins, 2) + ':';
+    total -= mins * 60;
+
+    let secs = total;
+    result += padZero(secs.toFixed(2), 5);
+
+    return result;
+  }
+
+  function updatePositionText() {
+    let durationSec = audioBuffer.length * process.stretch / audioBuffer.sampleRate;
+    let positionTimecode = secToTimecode(+$('#position').value * durationSec);
+    let durationTimecode = secToTimecode(durationSec);
+    $('#position_text').textContent = `${positionTimecode} / ${durationTimecode}`;
   }
 
   // NOTE(binji): copied from Control::set_stretch_controls in Control.cpp
@@ -137,7 +178,7 @@
     process.bufsize = bufsize;
 
     $('#rate_text').textContent = `${process.stretch.toFixed(2)}x`;
-    $('#window_text').textContent = `${process.bufsize}`;
+    $('#window_text').textContent = process.bufsize;
   }
 
   setStretchControls();
@@ -145,18 +186,37 @@
   $('#rate').addEventListener('input', event => {
     setStretchControls();
     player.setrap(process.stretch);
+    video.playbackRate = 1 / process.stretch;
+    updatePositionText();
   });
   $('#window').addEventListener('input', event => { setStretchControls(); });
   $('#mode').addEventListener('change', event => { setStretchControls(); });
+  $('#position').addEventListener('input', event => { updatePositionText(); });
 
-  $('#play').addEventListener('click', event => {
+  let isPlaying = false;
+  let playPauseEl = $('#playPause');
+
+  playPauseEl.addEventListener('click', event => {
     if (!filename) { return; }
-    player.startplay(filename, 0, process.stretch, process.bufsize,
-                     Module.FILE_TYPE.FILE_WAV, false, pparams, bbparams);
-  });
 
-  $('#stop').addEventListener('click', event => {
-    player.seek(1);
+    if (isPlaying) {
+      player.pause();
+      video.pause();
+    } else {
+      let position = +$('#position').value;
+
+      player.startplay(filename, position, process.stretch, process.bufsize,
+                       Module.FILE_TYPE.FILE_WAV, false, pparams, bbparams);
+      video.removeAttribute('hidden');
+      video.volume = 0;
+      video.playbackRate = 1 / process.stretch;
+      video.currentTime = position * video.duration;
+      video.play();
+
+    }
+
+    isPlaying = !isPlaying;
+    playPauseEl.innerHTML = isPlaying ? '	&#9632;' : '&#9654;';
   });
 
   function extendChannelData(data, samplerate, sec) {
@@ -172,7 +232,7 @@
       JsInputS = Module.InputS.extend("InputS", {
         open: function(filename) {
           this.filename_ = filename;
-          this.source_ = sources.get(filename);
+          this.source_ = audioBuffer;
           if (this.source_ === undefined) { return false; }
           if (this.source_.numberOfChannels == 0) { return false; }
 
@@ -197,7 +257,7 @@
           return true;
         },
         close: function() {
-          sources.delete(this.filename_);
+          audioBuffer = null;
         },
         read: function(data) {
           // `read` expects output as two interleaved channels of S16 samples in
@@ -236,15 +296,18 @@
   $('#file').addEventListener('change', async event => {
     await moduleReady;
 
+    let file = event.target.files[0];
+    video.src = URL.createObjectURL(file);
+
     let reader = new FileReader();
     let readPromise = eventPromise(reader, 'loadend', 'error');
-    let file = event.target.files[0];
     reader.readAsArrayBuffer(file);
     await readPromise;
 
-    let audioBuffer = await audioContext.decodeAudioData(reader.result);
+    audioBuffer = await audioContext.decodeAudioData(reader.result);
     filename = file.name;
-    sources.set(filename, audioBuffer);
+
+    updatePositionText();
   });
 
   // Audio playback loop.
@@ -263,9 +326,13 @@
       if (player.getmode() == Module.ModeType.MODE_PLAY ||
           player.getmode() == Module.ModeType.MODE_PREPARING) {
         player.computesamples();
+
       }
 
-      $('#position').textContent = `${(player.position * 100).toFixed(0)}%`;
+      if (isPlaying) {
+        $('#position').value = player.position;
+        updatePositionText();
+      }
 
       if (audioContext.currentTime + enqueueLatencySec >= startTime) {
         let inBuffer = player.getaudiobuffer(frames);
