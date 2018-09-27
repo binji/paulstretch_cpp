@@ -10,6 +10,10 @@
 <div>
   <label for="file">File:</label>
   <input id="file" type="file">
+  <button id="demo1">Demo1</button>
+  <button id="demo2">Demo2</button>
+  <button id="demo3">Demo3</button>
+  <button id="demo4">Demo4</button>
 </p>
 <div>
   <label for="rate">Rate:</label>
@@ -140,6 +144,7 @@
   }
 
   function updatePositionText() {
+    if (!audioBuffer) { return; }
     let durationSec = audioBuffer.length * process.stretch / audioBuffer.sampleRate;
     let positionTimecode = secToTimecode(+$('#position').value * durationSec);
     let durationTimecode = secToTimecode(durationSec);
@@ -147,7 +152,7 @@
   }
 
   // NOTE(binji): copied from Control::set_stretch_controls in Control.cpp
-  function setStretchControls() {
+  async function setStretchControls() {
     let stretch_s = +$('#rate').value;
     let fftsize_s = +$('#window').value;
     let mode = +$('#mode').value;
@@ -179,16 +184,16 @@
 
     $('#rate_text').textContent = `${process.stretch.toFixed(2)}x`;
     $('#window_text').textContent = process.bufsize;
+
+    await moduleReady;
+    player.setrap(process.stretch);
+    video.playbackRate = 1 / process.stretch;
+    updatePositionText();
   }
 
   setStretchControls();
 
-  $('#rate').addEventListener('input', event => {
-    setStretchControls();
-    player.setrap(process.stretch);
-    video.playbackRate = 1 / process.stretch;
-    updatePositionText();
-  });
+  $('#rate').addEventListener('input', event => { setStretchControls(); });
   $('#window').addEventListener('input', event => { setStretchControls(); });
   $('#mode').addEventListener('change', event => { setStretchControls(); });
   $('#position').addEventListener('input', event => { updatePositionText(); });
@@ -196,7 +201,9 @@
   let isPlaying = false;
   let playPauseEl = $('#playPause');
 
-  playPauseEl.addEventListener('click', event => {
+  playPauseEl.addEventListener('click', async event => {
+    await moduleReady;
+
     if (!filename) { return; }
 
     if (isPlaying) {
@@ -293,9 +300,59 @@
     return new JsInputS();
   }
 
-  $('#file').addEventListener('change', async event => {
-    await moduleReady;
+  function setPosition(value) {
+    $('#position').value = value;
+    updatePositionText();
+  }
 
+  async function fetchAndLoad(name) {
+    let response = await fetch(name);
+    let buffer = await response.arrayBuffer();
+    let blob = new Blob([buffer]);
+    let url = URL.createObjectURL(blob);
+    video.src = url;
+    return loadBuffer(name, buffer);
+  }
+
+  async function loadBuffer(name, buffer) {
+    audioBuffer = await audioContext.decodeAudioData(buffer);
+    filename = name;
+    updatePositionText();
+  }
+
+  $('#demo1').addEventListener('click', async event => {
+    await fetchAndLoad('takeon.mp4');
+    setPosition(0.411979);
+    $('#rate').value = 0.255674939467312;
+    $('#window').value = 0.414497578692494;
+    setStretchControls();
+  });
+
+  $('#demo2').addEventListener('click', async event => {
+    await fetchAndLoad('sledgehammer.mp4');
+    setPosition(0.176373);
+    $('#rate').value = 0.29;
+    $('#window').value = 0.47;
+    setStretchControls();
+  });
+
+  $('#demo3').addEventListener('click', async event => {
+    await fetchAndLoad('trololo.mp4');
+    setPosition(0.324733);
+    $('#rate').value = 0.29;
+    $('#window').value = 0.47;
+    setStretchControls();
+  });
+
+  $('#demo4').addEventListener('click', async event => {
+    await fetchAndLoad('manamana.mp4');
+    setPosition(0.078875);
+    $('#rate').value = 0.221776634382567;
+    $('#window').value = 0.191737288135593;
+    setStretchControls();
+  });
+
+  $('#file').addEventListener('change', async event => {
     let file = event.target.files[0];
     video.src = URL.createObjectURL(file);
 
@@ -303,11 +360,7 @@
     let readPromise = eventPromise(reader, 'loadend', 'error');
     reader.readAsArrayBuffer(file);
     await readPromise;
-
-    audioBuffer = await audioContext.decodeAudioData(reader.result);
-    filename = file.name;
-
-    updatePositionText();
+    return loadBuffer(file.name, reader.result);
   });
 
   // Audio playback loop.
@@ -330,8 +383,7 @@
       }
 
       if (isPlaying) {
-        $('#position').value = player.position;
-        updatePositionText();
+        setPosition(player.position);
       }
 
       if (audioContext.currentTime + enqueueLatencySec >= startTime) {
