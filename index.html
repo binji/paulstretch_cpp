@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<style>
+  .flex {
+    display: flex;
+  }
+  #position {
+    width: 100%;
+  }
+</style>
+<div>
+  <label for="file">File:</label>
+  <input id="file" type="file">
+</p>
+<div>
+  <label for="rate">Rate:</label>
+  <input id="rate" type="range" min="0" max="1" value="0.29" step="any">
+  <span id="rate_text">1x</span>
+</div>
+<div>
+  <label for="window">Window Size:</label>
+  <input id="window" type="range" min="0" max="1" value="0.47" step="any">
+  <span id="window_text">1</span>
+</div>
+<div>
+  <label for="mode">Mode:</label>
+  <select id="mode">
+    <option value="0">Stretch</option>
+    <option value="1">HyperStretch</option>
+    <option value="2">Shorten</option>
+  </select>
+</div>
+<hr>
+<video hidden></video>
+<div>
+</div>
+<div class="flex">
+  <input id="position" type="range" min="0" max="1" value="0" step="any">
+</div>
+<div>
+  <button id="playPause">&#9654;</button>
+  <span id="position_text"></span>
+</div>
+<script src="paulstretch.js"></script>
+<script>
+  let audioContext = new AudioContext();
+
+  let pparams;
+  let bbparams;
+  let player;
+
+  let audioBuffer;
+  let filename;
+
+  let JsInputS;
+
+  let moduleReady = new Promise(resolve => {
+    Module.onRuntimeInitialized = () => {
+      pparams = new Module.ProcessParameters();
+      bbparams = new Module.BinauralBeatsParameters();
+      player = new Module.Player();
+      resolve();
+    };
+  });
+
+  let $ = x => document.querySelector(x);
+
+  let video = $('video');
+
+  function eventPromise(obj, resolveEvent, rejectEvent) {
+    return new Promise((resolve, reject) => {
+      let resolveCb = event => {
+        resolve(event);
+        obj.removeEventListener(resolveEvent, resolveCb);
+      };
+      obj.addEventListener(resolveEvent, resolveCb);
+
+      if (rejectEvent) {
+        let rejectCb = event => {
+          reject(event);
+          obj.removeEventListener(rejectEvent, rejectCb);
+        };
+        obj.addEventListener(rejectEvent, rejectCb);
+      }
+    });
+  }
+
+  function sleep(ms) {
+    return new Promise(resolve => { setTimeout(() => resolve(), ms); });
+  }
+
+  // NOTE(binji): copied from Control::process in Control.cpp
+  let process = {
+    stretch : 4.0,
+    bufsize : 16384,
+  };
+
+  // NOTE(binji): copied from Control::get_optimized_updown in Control.cpp
+  function get_optimized_updown(n, up) {
+    let orig_n = n;
+    while (true) {
+      n = orig_n;
+      while (!(n%5)) n/=5;
+      while (!(n%3)) n/=3;
+      while (!(n%2)) n/=2;
+      if (n<2) break;
+      if (up) orig_n++;
+      else orig_n--;
+      if (orig_n<4) return 4;
+    };
+    return orig_n;
+  }
+
+  // NOTE(binji): copied from Control::optimizebufsize in Control.cpp
+  function optimizebufsize(n) {
+    let n1=get_optimized_updown(n, false);
+    let n2=get_optimized_updown(n, true);
+    if ((n-n1)<(n2-n)) return n1;
+    else return n2;
+  }
+
+  function padZero(s, len) {
+    return String(s).padStart(len, '0');
+  }
+
+  function secToTimecode(total) {
+    let result = '';
+
+    let hours = (total / (60*60)) | 0;
+    result += padZero(hours, 2) + ':';
+    total -= hours * 60*60;
+
+    let mins = (total / 60) | 0;
+    result += padZero(mins, 2) + ':';
+    total -= mins * 60;
+
+    let secs = total;
+    result += padZero(secs.toFixed(2), 5);
+
+    return result;
+  }
+
+  function updatePositionText() {
+    if (!audioBuffer) { return; }
+    let durationSec = audioBuffer.length * process.stretch / audioBuffer.sampleRate;
+    let positionTimecode = secToTimecode(+$('#position').value * durationSec);
+    let durationTimecode = secToTimecode(durationSec);
+    $('#position_text').textContent = `${positionTimecode} / ${durationTimecode}`;
+  }
+
+  // NOTE(binji): copied from Control::set_stretch_controls in Control.cpp
+  async function setStretchControls() {
+    let stretch_s = +$('#rate').value;
+    let fftsize_s = +$('#window').value;
+    let mode = +$('#mode').value;
+
+    let stretch = 1.0;
+    switch (mode) {
+      case 0:
+        stretch_s = Math.pow(stretch_s, 1.2);
+        stretch = Math.pow(10.0, stretch_s* 4.0);
+        break;
+
+      case 1:
+        stretch_s = Math.pow(stretch_s, 1.5);
+        stretch = Math.pow(10.0, stretch_s* 18.0);
+        break;
+
+      case 2:
+        stretch = 1.0 / Math.pow(10.0, stretch_s * 2.0);
+        break;
+    }
+
+    fftsize_s = Math.pow(fftsize_s, 1.5);
+    let bufsize = (Math.pow(2.0, fftsize_s * 12.0) * 512.0) | 0;
+
+    bufsize = optimizebufsize(bufsize);
+
+    process.stretch = stretch;
+    process.bufsize = bufsize;
+
+    $('#rate_text').textContent = `${process.stretch.toFixed(2)}x`;
+    $('#window_text').textContent = process.bufsize;
+
+    await moduleReady;
+    player.setrap(process.stretch);
+    video.playbackRate = 1 / process.stretch;
+    updatePositionText();
+  }
+
+  setStretchControls();
+
+  $('#rate').addEventListener('input', event => { setStretchControls(); });
+  $('#window').addEventListener('input', event => { setStretchControls(); });
+  $('#mode').addEventListener('change', event => { setStretchControls(); });
+  $('#position').addEventListener('input', event => { updatePositionText(); });
+
+  let isPlaying = false;
+  let playPauseEl = $('#playPause');
+
+  playPauseEl.addEventListener('click', async event => {
+    await moduleReady;
+
+    if (!filename) { return; }
+
+    if (isPlaying) {
+      player.pause();
+      video.pause();
+    } else {
+      let position = +$('#position').value;
+
+      player.startplay(filename, position, process.stretch, process.bufsize,
+                       Module.FILE_TYPE.FILE_WAV, false, pparams, bbparams);
+      video.removeAttribute('hidden');
+      video.volume = 0;
+      video.playbackRate = 1 / process.stretch;
+      video.currentTime = position * video.duration;
+      video.play();
+
+    }
+
+    isPlaying = !isPlaying;
+    playPauseEl.innerHTML = isPlaying ? '	&#9632;' : '&#9654;';
+  });
+
+  function extendChannelData(data, samplerate, sec) {
+    let newLength = data.length + samplerate * sec;
+    let newData = new Float32Array(newLength);
+    newData.set(data);
+    return newData;
+  }
+
+  // Called by wasm to create a new Input source.
+  function makeJsInputS() {
+    if (!JsInputS) {
+      JsInputS = Module.InputS.extend("InputS", {
+        open: function(filename) {
+          this.filename_ = filename;
+          this.source_ = audioBuffer;
+          if (this.source_ === undefined) { return false; }
+          if (this.source_.numberOfChannels == 0) { return false; }
+
+          this.channels_ = new Array(this.numberOfChannels);
+
+          // Add an additional second of silence, since the playback seems to
+          // clip as soon as the input hits eof.
+          this.channels_[0] = extendChannelData(
+              this.source_.getChannelData(0), this.source_.sampleRate, 1.0);
+
+          if (this.source_.numberOfChannels > 1) {
+            this.channels_[1] = extendChannelData(
+                this.source_.getChannelData(1), this.source_.sampleRate, 1.0);
+          } else {
+            this.channels_[1] = this.channels_[0];
+          }
+
+          this.nsamples = this.channels_[0].length;
+          this.nchannels = 2;
+          this.samplerate = this.source_.sampleRate;
+          this.currentsample = 0;
+          return true;
+        },
+        close: function() {
+          audioBuffer = null;
+        },
+        read: function(data) {
+          // `read` expects output as two interleaved channels of S16 samples in
+          // the range [-32768, 32767]. The input data is always two separate
+          // channels of F32 samples [-1..1].
+          let requested = data.length / 2;
+          let remaining = this.nsamples - this.currentsample;
+          let samples = Math.min(remaining, requested);
+          for (let i = 0; i < samples; ++i) {
+            data[2*i] = this.channels_[0][this.currentsample + i] * 32768;
+            data[2*i+1] = this.channels_[1][this.currentsample + i] * 32768;
+          }
+          if (samples < requested) {
+            for (let i = samples; i < requested; ++i) {
+              data[2*i] = 0;
+              data[2*i+1] = 0;
+            }
+            this.currentsample = this.nsamples;
+            this.eof = true;
+          } else {
+            this.currentsample += samples;
+          }
+          return samples;
+        },
+        seek: function(pos) {
+          let sample = (pos * this.nsamples) | 0;
+          if (sample === this.currentsample) { return; }
+          this.currentsample = sample;
+        }
+      });
+    }
+
+    return new JsInputS();
+  }
+
+  function setPosition(value) {
+    $('#position').value = value;
+    updatePositionText();
+  }
+
+  async function loadBuffer(name, buffer) {
+    audioBuffer = await audioContext.decodeAudioData(buffer);
+    filename = name;
+    updatePositionText();
+  }
+
+  $('#file').addEventListener('change', async event => {
+    let file = event.target.files[0];
+    video.src = URL.createObjectURL(file);
+
+    let reader = new FileReader();
+    let readPromise = eventPromise(reader, 'loadend', 'error');
+    reader.readAsArrayBuffer(file);
+    await readPromise;
+    return loadBuffer(file.name, reader.result);
+  });
+
+  // Audio playback loop.
+  (async function() {
+    await moduleReady;
+
+    const enqueueLatencySec = 0.05;
+    const frames = 4096;
+    const channels = 2;
+    const sampleRate = audioContext.sampleRate;
+    const bufferSec = frames / sampleRate;
+    let startTime = audioContext.currentTime;
+
+    for (;;) {
+      player.newtaskcheck();
+      if (player.getmode() == Module.ModeType.MODE_PLAY ||
+          player.getmode() == Module.ModeType.MODE_PREPARING) {
+        player.computesamples();
+
+      }
+
+      if (isPlaying) {
+        setPosition(player.position);
+
+        if (audioContext.currentTime + enqueueLatencySec >= startTime) {
+          let inBuffer = player.getaudiobuffer(frames);
+          let outBuffer = audioContext.createBuffer(channels, frames, sampleRate);
+          let channel0 = outBuffer.getChannelData(0);
+          let channel1 = outBuffer.getChannelData(1);
+          for (let i = 0; i < frames; ++i) {
+            channel0[i] = inBuffer[2*i];
+            channel1[i] = inBuffer[2*i+1];
+          }
+
+          let bufferSource = audioContext.createBufferSource();
+          bufferSource.buffer = outBuffer;
+          bufferSource.connect(audioContext.destination);
+          bufferSource.start(startTime);
+          startTime += bufferSec;
+        }
+      }
+
+      await sleep(1);
+    }
+  })();
+
+</script>
