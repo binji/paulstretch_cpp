@@ -10,10 +10,6 @@
 <div>
   <label for="file">File:</label>
   <input id="file" type="file">
-  <button id="demo1">Demo1</button>
-  <button id="demo2">Demo2</button>
-  <button id="demo3">Demo3</button>
-  <button id="demo4">Demo4</button>
 </p>
 <div>
   <label for="rate">Rate:</label>
@@ -305,52 +301,11 @@
     updatePositionText();
   }
 
-  async function fetchAndLoad(name) {
-    let response = await fetch(name);
-    let buffer = await response.arrayBuffer();
-    let blob = new Blob([buffer]);
-    let url = URL.createObjectURL(blob);
-    video.src = url;
-    return loadBuffer(name, buffer);
-  }
-
   async function loadBuffer(name, buffer) {
     audioBuffer = await audioContext.decodeAudioData(buffer);
     filename = name;
     updatePositionText();
   }
-
-  $('#demo1').addEventListener('click', async event => {
-    await fetchAndLoad('takeon.mp4');
-    setPosition(0.411979);
-    $('#rate').value = 0.255674939467312;
-    $('#window').value = 0.414497578692494;
-    setStretchControls();
-  });
-
-  $('#demo2').addEventListener('click', async event => {
-    await fetchAndLoad('sledgehammer.mp4');
-    setPosition(0.176373);
-    $('#rate').value = 0.29;
-    $('#window').value = 0.47;
-    setStretchControls();
-  });
-
-  $('#demo3').addEventListener('click', async event => {
-    await fetchAndLoad('trololo.mp4');
-    setPosition(0.324733);
-    $('#rate').value = 0.29;
-    $('#window').value = 0.47;
-    setStretchControls();
-  });
-
-  $('#demo4').addEventListener('click', async event => {
-    await fetchAndLoad('manamana.mp4');
-    setPosition(0.078875);
-    $('#rate').value = 0.221776634382567;
-    $('#window').value = 0.191737288135593;
-    setStretchControls();
-  });
 
   $('#file').addEventListener('change', async event => {
     let file = event.target.files[0];
@@ -384,23 +339,23 @@
 
       if (isPlaying) {
         setPosition(player.position);
-      }
 
-      if (audioContext.currentTime + enqueueLatencySec >= startTime) {
-        let inBuffer = player.getaudiobuffer(frames);
-        let outBuffer = audioContext.createBuffer(channels, frames, sampleRate);
-        let channel0 = outBuffer.getChannelData(0);
-        let channel1 = outBuffer.getChannelData(1);
-        for (let i = 0; i < frames; ++i) {
-          channel0[i] = inBuffer[2*i];
-          channel1[i] = inBuffer[2*i+1];
+        if (audioContext.currentTime + enqueueLatencySec >= startTime) {
+          let inBuffer = player.getaudiobuffer(frames);
+          let outBuffer = audioContext.createBuffer(channels, frames, sampleRate);
+          let channel0 = outBuffer.getChannelData(0);
+          let channel1 = outBuffer.getChannelData(1);
+          for (let i = 0; i < frames; ++i) {
+            channel0[i] = inBuffer[2*i];
+            channel1[i] = inBuffer[2*i+1];
+          }
+
+          let bufferSource = audioContext.createBufferSource();
+          bufferSource.buffer = outBuffer;
+          bufferSource.connect(audioContext.destination);
+          bufferSource.start(startTime);
+          startTime += bufferSec;
         }
-
-        let bufferSource = audioContext.createBufferSource();
-        bufferSource.buffer = outBuffer;
-        bufferSource.connect(audioContext.destination);
-        bufferSource.start(startTime);
-        startTime += bufferSec;
       }
 
       await sleep(1);
